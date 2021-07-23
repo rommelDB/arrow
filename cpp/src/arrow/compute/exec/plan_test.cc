@@ -383,7 +383,10 @@ TEST(ExecPlanExecution, SourceFilterSink) {
                                           /*parallel=*/false, /*slow=*/false));
 
   ASSERT_OK_AND_ASSIGN(
-      auto filter, MakeFilterNode(source, "filter", equal(field_ref("i32"), literal(6))));
+      auto filter,
+      MakeExecNode("filter", plan.get(),
+                   FilterExecFactoryOptions{source, "filter i32 == 6",
+                                            equal(field_ref("i32"), literal(6))}));
 
   auto sink_gen = MakeSinkNode(filter, "sink");
 

@@ -1291,5 +1291,93 @@ Result<Datum> GroupByUsingExecPlan(const std::vector<Datum>& arguments,
                          /*null_count=*/0);
 }
 
+namespace {
+
+class DefaultExecFactoryRegistry : public ExecFactoryRegistry {
+ public:
+  DefaultExecFactoryRegistry() {
+    DCHECK_OK(AddFactory(
+        "filter",
+        [](ExecPlan* plan, const ExecFactoryOptions& options) -> Result<ExecNode*> {
+          const auto& filter_options =
+              checked_cast<const FilterExecFactoryOptions&>(options);
+
+          if (options.inputs[0]->plan() != plan) {
+            return Status::Invalid(
+                "Constructing a filter node in a different plan from its input");
+          }
+
+          return MakeFilterNode(options.inputs[0], options.label,
+                                filter_options.filter_expression);
+        }));
+
+    DCHECK_OK(AddFactory(
+        "project",
+        [](ExecPlan* plan, const ExecFactoryOptions& options) -> Result<ExecNode*> {
+          if (options.inputs[0]->plan() != plan) {
+            return Status::Invalid(
+                "Constructing a project noode in a different plan from its input");
+          }
+
+          const auto& project_options =
+              checked_cast<const ProjectExecFactoryOptions&>(options);
+
+          return MakeProjectNode(options.inputs[0], options.label,
+                                 project_options.expressions, project_options.names);
+        }));
+
+    DCHECK_OK(AddFactory(
+        "aggregate",
+        [](ExecPlan* plan, const ExecFactoryOptions& options) -> Result<ExecNode*> {
+          if (options.inputs[0]->plan() != plan) {
+            return Status::Invalid(
+                "Constructing an aggregate node in a different plan from its input");
+          }
+
+          const auto& aggregate_options =
+              checked_cast<const AggregateExecFactoryOptions&>(options);
+
+          if (aggregate_options.keys.empty()) {
+            // construct scalar agg node
+            return MakeScalarAggregateNode(options.inputs[0], options.label,
+                                           aggregate_options.aggs);
+          }
+          return MakeGroupByNode(options.inputs[0], options.label, aggregate_options.keys,
+                                 aggregate_options.agg_srcs, aggregate_options.aggs);
+        }));
+  }
+
+  Result<Factory> GetFactory(const std::string& factory_name) override {
+    auto it = factories_.find(factory_name);
+    if (it == factories_.end()) {
+      return Status::KeyError("ExecNode factory named ", factory_name,
+                              " not present in registry.");
+    }
+    return it->second;
+  }
+
+  Status AddFactory(std::string factory_name, Factory factory) override {
+    auto it_success = factories_.emplace(std::move(factory_name), std::move(factory));
+
+    if (!it_success.second) {
+      const auto& factory_name = it_success.first->first;
+      return Status::KeyError("ExecNode factory named ", factory_name,
+                              " already registered.");
+    }
+
+    return Status::OK();
+  }
+
+ private:
+  std::unordered_map<std::string, Factory> factories_;
+};
+
+}  // namespace
+
+ExecFactoryRegistry* default_exec_factory_registry() {
+  static DefaultExecFactoryRegistry impl;
+  return &impl;
+}
+
 }  // namespace compute
 }  // namespace arrow

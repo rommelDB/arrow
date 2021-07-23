@@ -237,6 +237,128 @@ class ARROW_EXPORT ExecNode {
   NodeVector outputs_;
 };
 
+class ExecFactoryOptions {
+ public:
+  virtual ~ExecFactoryOptions() = default;
+
+  explicit ExecFactoryOptions(std::vector<ExecNode*> inputs, std::string label)
+      : inputs(std::move(inputs)), label(std::move(label)) {}
+
+  std::vector<ExecNode*> inputs;
+  std::string label;
+};
+
+class ExecFactoryRegistry {
+ public:
+  using Factory = std::function<Result<ExecNode*>(ExecPlan*, const ExecFactoryOptions&)>;
+
+  virtual ~ExecFactoryRegistry() = default;
+
+  // will raise if factory_name is not found in the registry
+  virtual Result<Factory> GetFactory(const std::string& factory_name) = 0;
+
+  // will raise if factory_name is already in the registry
+  virtual Status AddFactory(std::string factory_name, Factory factory) = 0;
+};
+
+ARROW_EXPORT
+ExecFactoryRegistry* default_exec_factory_registry();
+
+// - get an appropriate factory from the registry
+// - invoke the factory to create an ExecNode
+inline Result<ExecNode*> MakeExecNode(
+    const std::string& factory_name,  // filter, project, ...
+    ExecPlan* plan, const ExecFactoryOptions& options,
+    ExecFactoryRegistry* registry = default_exec_factory_registry()) {
+  ARROW_ASSIGN_OR_RAISE(auto factory, registry->GetFactory(factory_name));
+  return factory(plan, options);
+}
+
+class FilterExecFactoryOptions : public ExecFactoryOptions {
+ public:
+  FilterExecFactoryOptions(ExecNode* input, std::string label,
+                           Expression filter_expression)
+      : ExecFactoryOptions({input}, std::move(label)),
+        filter_expression(std::move(filter_expression)) {}
+
+  Expression filter_expression;
+};
+
+class ProjectExecFactoryOptions : public ExecFactoryOptions {
+ public:
+  ProjectExecFactoryOptions(ExecNode* input, std::string label,
+                            std::vector<Expression> expressions,
+                            std::vector<std::string> names)
+      : ExecFactoryOptions({input}, std::move(label)),
+        expressions(std::move(expressions)),
+        names(std::move(names)) {}
+
+  std::vector<Expression> expressions;
+  std::vector<std::string> names;
+};
+
+class AggregateExecFactoryOptions : public ExecFactoryOptions {
+  AggregateExecFactoryOptions(ExecNode* input, std::string label,
+                              std::vector<internal::Aggregate> aggs,
+                              std::vector<std::string> agg_srcs,
+                              std::vector<std::string> keys = {})
+      : ExecFactoryOptions({input}, std::move(label)),
+        aggs(std::move(aggs)),
+        agg_srcs(std::move(agg_srcs)),
+        keys(std::move(keys)) {}
+
+ public:
+  std::vector<internal::Aggregate> aggs;
+  std::vector<std::string> agg_srcs;
+  std::vector<std::string> keys;
+};
+
+class SourceExecFactoryOptions {};
+/*
+
+// goal 1: replace hard coded factories with calls to a configurable registry
+
+// will replace:
+  ASSERT_OK_AND_ASSIGN(
+      auto filter, MakeFilterNode(source, "filter", equal(field_ref("i32"), literal(6))));
+
+// with:
+  ASSERT_OK_AND_ASSIGN(
+      auto filter, MakeExecNode("filter",
+                                plan.get(),
+                                FilterExecFactoryOptions{
+                                  .input = source,
+                                  .label = "filter i32 == 6",
+                                  .filter_expression = equal(field_ref("i32"), literal(6))
+                                }));
+
+*/
+
+/*
+
+// goal 2: allow extension of the registry from outside of apache/arrow repo
+// (the following snippet should be added to compute_register_example.cc)
+
+  auto external_factory = [](ExecPlan* plan,
+                             const ExecFactoryOptions& options) -> Result<ExecNode*> {
+    //...
+  };
+
+  auto registry = default_exec_factory_registry();
+  RETURN_NOT_OK(registry->AddFactory("compute_register_example", external_factory));
+
+  ASSERT_OK_AND_ASSIGN(
+      auto example, MakeExecNode("compute_register_example",
+                                 plan.get(),
+                                 ExecFactoryOptions{
+                                   .inputs = {},
+                                   .label = "example :D"
+                                 }));
+
+  // construct an ExecPlan containing this node?
+
+*/
+
 /// \brief Adapt an AsyncGenerator<ExecBatch> as a source node
 ///
 /// plan->exec_context()->executor() is used to parallelize pushing to
