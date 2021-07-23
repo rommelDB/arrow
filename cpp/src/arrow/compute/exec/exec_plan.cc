@@ -1316,7 +1316,7 @@ class DefaultExecFactoryRegistry : public ExecFactoryRegistry {
         [](ExecPlan* plan, const ExecFactoryOptions& options) -> Result<ExecNode*> {
           if (options.inputs[0]->plan() != plan) {
             return Status::Invalid(
-                "Constructing a project noode in a different plan from its input");
+                "Constructing a project node in a different plan from its input");
           }
 
           const auto& project_options =
@@ -1344,6 +1344,16 @@ class DefaultExecFactoryRegistry : public ExecFactoryRegistry {
           }
           return MakeGroupByNode(options.inputs[0], options.label, aggregate_options.keys,
                                  aggregate_options.agg_srcs, aggregate_options.aggs);
+        }));
+
+    DCHECK_OK(AddFactory(
+        "source",
+        [](ExecPlan* plan, const ExecFactoryOptions& options) -> Result<ExecNode*> {
+          const auto& source_options =
+              checked_cast<const SourceExecFactoryOptions&>(options);
+
+          return MakeSourceNode(plan, options.label, source_options.output_schema,
+                                source_options.generator);
         }));
   }
 

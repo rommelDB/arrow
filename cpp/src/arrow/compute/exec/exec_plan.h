@@ -298,6 +298,7 @@ class ProjectExecFactoryOptions : public ExecFactoryOptions {
 };
 
 class AggregateExecFactoryOptions : public ExecFactoryOptions {
+ public:
   AggregateExecFactoryOptions(ExecNode* input, std::string label,
                               std::vector<internal::Aggregate> aggs,
                               std::vector<std::string> agg_srcs,
@@ -307,13 +308,23 @@ class AggregateExecFactoryOptions : public ExecFactoryOptions {
         agg_srcs(std::move(agg_srcs)),
         keys(std::move(keys)) {}
 
- public:
   std::vector<internal::Aggregate> aggs;
   std::vector<std::string> agg_srcs;
   std::vector<std::string> keys;
 };
 
-class SourceExecFactoryOptions {};
+class SourceExecFactoryOptions : public ExecFactoryOptions {
+ public:
+  SourceExecFactoryOptions(std::string label, std::shared_ptr<Schema> output_schema,
+                           std::function<Future<util::optional<ExecBatch>>()> generator)
+      : ExecFactoryOptions({}, std::move(label)),
+        output_schema(std::move(output_schema)),
+        generator(std::move(generator)) {}
+
+  std::shared_ptr<Schema> output_schema;
+  std::function<Future<util::optional<ExecBatch>>()> generator;
+};
+
 /*
 
 // goal 1: replace hard coded factories with calls to a configurable registry

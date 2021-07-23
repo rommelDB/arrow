@@ -231,8 +231,10 @@ Result<ExecNode*> MakeTestSourceNode(ExecPlan* plan, std::string label,
     });
   }
 
-  return MakeSourceNode(plan, label, std::move(batches_with_schema.schema),
-                        std::move(gen));
+  return MakeExecNode(
+      "source", plan,
+      SourceExecFactoryOptions{"source", std::move(batches_with_schema.schema),
+                               std::move(gen)});
 }
 
 Future<std::vector<ExecBatch>> StartAndCollect(
@@ -413,8 +415,11 @@ TEST(ExecPlanExecution, SourceProjectSink) {
     ASSERT_OK_AND_ASSIGN(expr, expr.Bind(*basic_data.schema));
   }
 
-  ASSERT_OK_AND_ASSIGN(auto projection,
-                       MakeProjectNode(source, "project", exprs, {"!bool", "i32 + 1"}));
+  ASSERT_OK_AND_ASSIGN(
+      auto projection,
+      MakeExecNode("project", plan.get(),
+                   ProjectExecFactoryOptions{
+                       source, "!bool || i32 + 1", exprs, {"!bool", "i32 + 1"}}));
 
   auto sink_gen = MakeSinkNode(projection, "sink");
 
