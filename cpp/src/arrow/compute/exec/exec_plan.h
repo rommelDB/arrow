@@ -330,11 +330,11 @@ class SourceExecFactoryOptions : public ExecFactoryOptions {
 // goal 1: replace hard coded factories with calls to a configurable registry
 
 // will replace:
-  ASSERT_OK_AND_ASSIGN(
-      auto filter, MakeFilterNode(source, "filter", equal(field_ref("i32"), literal(6))));
+  ARROW_ASSIGN_OR_RAISE(auto filter, MakeFilterNode(source, "filter",
+      equal(field_ref("i32"), literal(6))));
 
 // with:
-  ASSERT_OK_AND_ASSIGN(
+  ARROW_ASSIGN_OR_RAISE(
       auto filter, MakeExecNode("filter",
                                 plan.get(),
                                 FilterExecFactoryOptions{
@@ -356,9 +356,9 @@ class SourceExecFactoryOptions : public ExecFactoryOptions {
   };
 
   auto registry = default_exec_factory_registry();
-  RETURN_NOT_OK(registry->AddFactory("compute_register_example", external_factory));
+  ARROW_RETURN_NOT_OK(registry->AddFactory("compute_register_example", external_factory));
 
-  ASSERT_OK_AND_ASSIGN(
+  ARROW_ASSIGN_OR_RAISE(
       auto example, MakeExecNode("compute_register_example",
                                  plan.get(),
                                  ExecFactoryOptions{
